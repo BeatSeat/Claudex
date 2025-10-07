@@ -11,7 +11,7 @@ import type {
   SDKSystemMessage,
   SDKPartialAssistantMessage,
   SDKCompactBoundaryMessage
-} from '@anthropic-ai/claude-code';
+} from '@anthropic-ai/claude-agent-sdk';
 
 // VSCode API接口
 export interface VSCodeAPI {
@@ -260,6 +260,14 @@ export interface ChatMessage {
   type?: 'text' | 'tool_use' | 'tool_result' | 'error'; // 向后兼容
 }
 
+export interface StreamingMessageEntry {
+  sessionId: string;
+  blockIndex: number;
+  messageIndex: number;
+  contentType: 'text' | 'tool_use';
+  toolUseId?: string;
+}
+
 export interface ChatState {
   messages: ChatMessage[];
   currentRequest: {
@@ -267,7 +275,7 @@ export interface ChatState {
     status: 'sending' | 'thinking' | 'generating' | 'tool_use';
     startTime: number;
   } | null;
-  streamingMessages: Map<string, number>;
+  streamingMessages: Map<string, StreamingMessageEntry>;
 }
 
 export interface SessionState {

@@ -10,7 +10,7 @@ import type {
   SDKSystemMessage,
   SDKCompactBoundaryMessage,
   SDKPartialAssistantMessage
-} from '@anthropic-ai/claude-code';
+} from '@anthropic-ai/claude-agent-sdk';
 
 // 内容块类型定义
 export interface ContentBlock {
@@ -190,9 +190,17 @@ export function isSDKCompactBoundaryMessage(message: SDKMessage): message is SDK
 function extractStreamEventText(message: SDKPartialAssistantMessage): string {
   const event = message.event;
 
-  // @ts-ignore - stream event structure
-  if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-    return event.delta.text || '';
+  if (!event) {
+    return '';
+  }
+
+  if (event.type === 'content_block_delta') {
+    if (event.delta?.type === 'text_delta') {
+      return event.delta.text || '';
+    }
+    if ((event.delta as any)?.type === 'input_json_delta') {
+      return (event.delta as any).partial_json || '';
+    }
   }
 
   return '';
@@ -261,6 +269,29 @@ function extractAssistantContentBlocks(message: SDKAssistantMessage): ContentBlo
  * 提取流内容块
  */
 function extractStreamContentBlocks(message: SDKPartialAssistantMessage): ContentBlock[] {
+  const event = message.event;
+  if (!event) {
+    return [];
+  }
+
+  if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+    return [{
+      type: 'tool_use',
+      id: event.content_block.id,
+      name: event.content_block.name,
+      input: event.content_block.input
+    }];
+  }
+
+  if (event.type === 'content_block_delta' && (event.delta as any)?.type === 'input_json_delta') {
+    return [{
+      type: 'tool_use',
+      id: message.parent_tool_use_id || '',
+      name: '',
+      input: (event.delta as any).partial_json
+    }];
+  }
+
   const text = extractStreamEventText(message);
   return text ? [{ type: 'text', text }] : [];
 }

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { Options, PermissionResult, Query, SDKMessage, SDKUserMessage, CanUseTool } from '@anthropic-ai/claude-code';
+import type { Options, PermissionResult, Query, SDKMessage, SDKUserMessage, CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import Anthropic from '@anthropic-ai/sdk';
 import { DeferredPromise } from '../common/deferred';
 import { Disposable } from '../common/lifecycle';
@@ -109,7 +109,7 @@ class ClaudeCodeSession {
 			};
 
 			this.logService.trace(`Claude CLI SDK: Starting query with options: ${JSON.stringify({ ...options, env: undefined })}`);
-			const { query } = await import('@anthropic-ai/claude-code');
+                        const { query } = await import('@anthropic-ai/claude-agent-sdk');
 			const def = new DeferredPromise<void>();
 
 			async function* createPromptIterable(promptText: string, sessionId?: string): AsyncIterable<SDKUserMessage> {

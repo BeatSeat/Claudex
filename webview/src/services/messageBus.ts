@@ -10,18 +10,13 @@ import type {
   ChatMessage,
   ChatState,
   SessionState,
-  PermissionState
+  PermissionState,
+  StreamingMessageEntry
 } from '../../types/messages';
 import type { QueuedMessage, MessageQueueState } from '../../types/queue';
-import type { SDKMessage } from '@anthropic-ai/claude-code';
-import {
-  extractTextContent,
-  extractContentBlocks,
-  getMessageType,
-  getMessageDisplayTitle,
-  isMessageStreaming
-} from '../utils/messageUtils';
-import { isSDKUserMessage, isSDKAssistantMessage } from '../../types/messages';
+import type { SDKMessage, SDKPartialAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
+import { extractTextContent, extractContentBlocks } from '../utils/messageUtils';
+import { isSDKUserMessage, isSDKAssistantMessage, isSDKStreamEvent } from '../../types/messages';
 import { setToolResult, setToolUse, setPermissionRequest, setPermissionResponse, getToolMessage, upsertToolMessage } from '../stores/toolMessageStore';
 
 // ========== 全局状态 ==========
@@ -29,7 +24,7 @@ import { setToolResult, setToolUse, setPermissionRequest, setPermissionResponse,
 export const chatState = reactive<ChatState>({
   messages: [],
   currentRequest: null,
-  streamingMessages: new Map()
+  streamingMessages: new Map<string, StreamingMessageEntry>()
 });
 
 export const sessionState = reactive<SessionState>({
@@ -53,6 +48,7 @@ class WebviewMessageBus {
   private handlers: Map<string, Function[]> = new Map();
   private messageSequence = 0;
   private connected = ref(false);
+  private toolInputBuffers = new Map<string, string>();
 
   constructor() {
     this.initVSCodeAPI();
@@ -168,6 +164,30 @@ class WebviewMessageBus {
 
   private generateUuid(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  }
+
+  private getStreamKey(sessionId: string, blockIndex: number): string {
+    return `${sessionId}:${blockIndex}`;
+  }
+
+  private getStreamEntry(sessionId: string, blockIndex: number): StreamingMessageEntry | undefined {
+    return chatState.streamingMessages.get(this.getStreamKey(sessionId, blockIndex));
+  }
+
+  private setStreamEntry(entry: StreamingMessageEntry): void {
+    chatState.streamingMessages.set(this.getStreamKey(entry.sessionId, entry.blockIndex), entry);
+  }
+
+  private clearStreamEntry(sessionId: string, blockIndex: number): void {
+    chatState.streamingMessages.delete(this.getStreamKey(sessionId, blockIndex));
+  }
+
+  private tryParseJson(value: string): any | undefined {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -433,21 +453,23 @@ class WebviewMessageBus {
     // 只有当助手消息包含文本内容时才创建助手文本消息
     if (hasTextContent && textContent.trim()) {
       const sessionId = sdkMessage.session_id || '';
-      const existingIndex = chatState.streamingMessages.get(sessionId);
-
-      if (existingIndex !== undefined) {
-        // 更新现有的流式消息
-        const existingMessage = chatState.messages[existingIndex];
-        if (existingMessage) {
-          existingMessage.content = textContent;
-          existingMessage.contentBlocks = [{ type: 'text', text: textContent }];
-          existingMessage.streaming = false;
-          existingMessage.status = 'completed';
-          existingMessage.sdkMessage = sdkMessage;
-          chatState.streamingMessages.delete(sessionId);
+      let existingIndex = -1;
+      for (let i = chatState.messages.length - 1; i >= 0; i--) {
+        const candidate = chatState.messages[i];
+        if (candidate.sessionId === sessionId && candidate.role === 'assistant' && candidate.type !== 'tool_use') {
+          existingIndex = i;
+          break;
         }
+      }
+
+      if (existingIndex !== -1) {
+        const existingMessage = chatState.messages[existingIndex];
+        existingMessage.content = textContent;
+        existingMessage.contentBlocks = [{ type: 'text', text: textContent }];
+        existingMessage.streaming = false;
+        existingMessage.status = 'completed';
+        existingMessage.sdkMessage = sdkMessage;
       } else {
-        // 创建新的助手文本消息
         const message: ChatMessage = {
           id: `assistant_${Date.now()}`,
           sdkMessage,
@@ -457,91 +479,231 @@ class WebviewMessageBus {
           timestamp: Date.now(),
           status: 'completed',
           streaming: false,
-          sessionId: sessionId
+          sessionId
         };
         chatState.messages.push(message);
       }
     }
   }
 
-  private createToolMessage(toolUseBlock: Record<string, any>, sdkMessage: SDKMessage) {
+  private createToolMessage(toolUseBlock: Record<string, any>, sdkMessage: SDKMessage): number {
     console.log('[MessageBus] 创建工具消息:', toolUseBlock.name, toolUseBlock.id);
 
-    // 为每个 tool_use 创建独立的消息项
-    const toolMessage: ChatMessage = {
-      id: `tool_${toolUseBlock.id}`,
-      sdkMessage,
-      role: 'assistant',
-      content: `使用工具: ${toolUseBlock.name}`,
-      contentBlocks: [{
-        type: 'tool_use',
+    const messageId = `tool_${toolUseBlock.id}`;
+    const sessionId = (sdkMessage as Record<string, any>).session_id || '';
+    const existingIndex = chatState.messages.findIndex(msg => msg.id === messageId);
+    const contentBlock = {
+      type: 'tool_use' as const,
+      id: toolUseBlock.id,
+      name: toolUseBlock.name,
+      input: toolUseBlock.input
+    };
+
+    if (existingIndex !== -1) {
+      const existingMessage = chatState.messages[existingIndex];
+      existingMessage.sdkMessage = sdkMessage;
+      existingMessage.content = `使用工具: ${toolUseBlock.name}`;
+      existingMessage.contentBlocks = [contentBlock];
+      existingMessage.timestamp = Date.now();
+      existingMessage.sessionId = sessionId;
+
+      setToolUse({
         id: toolUseBlock.id,
         name: toolUseBlock.name,
         input: toolUseBlock.input
-      }],
+      });
+
+      return existingIndex;
+    }
+
+    const toolMessage: ChatMessage = {
+      id: messageId,
+      sdkMessage,
+      role: 'assistant',
+      content: `使用工具: ${toolUseBlock.name}`,
+      contentBlocks: [contentBlock],
       timestamp: Date.now(),
       status: 'sent',
-      sessionId: (sdkMessage as Record<string, any>).session_id || '',
-      type: 'tool_use' // 特殊标记，表示这是工具消息
+      sessionId,
+      type: 'tool_use'
     };
 
-    chatState.messages.push(toolMessage);
+    const index = chatState.messages.push(toolMessage) - 1;
     console.log('[MessageBus] 工具消息已添加到 chatState，当前消息数量:', chatState.messages.length);
 
-    // 同时更新 toolMessageStore
     setToolUse({
       id: toolUseBlock.id,
       name: toolUseBlock.name,
       input: toolUseBlock.input
     });
+
+    return index;
   }
 
   private handleStreamEvent(event: ClaudeEventMessage['payload']) {
-    if (event.kind !== 'stream_event' || !event.message || event.message.type !== 'stream_event') {
+    if (event.kind !== 'stream_event' || !event.message || !isSDKStreamEvent(event.message)) {
       return;
     }
 
-    const sdkMessage = event.message;
-    const sessionId = sdkMessage.session_id || 'default';
-
-    const deltaText = extractTextContent(sdkMessage);
-
-    if (!deltaText) {
+    const sdkMessage = event.message as SDKPartialAssistantMessage;
+    const streamEvent = sdkMessage.event;
+    if (!streamEvent) {
       return;
     }
 
-    const existingIndex = chatState.streamingMessages.get(sessionId);
+    const sessionId = sdkMessage.session_id || '';
 
-    if (existingIndex !== undefined) {
-      const existingMessage = chatState.messages[existingIndex];
-      if (existingMessage) {
-        existingMessage.content += deltaText;
-        // 更新 contentBlocks
-        if (existingMessage.contentBlocks && existingMessage.contentBlocks.length > 0) {
-          const lastBlock = existingMessage.contentBlocks[existingMessage.contentBlocks.length - 1];
-          if (lastBlock.type === 'text' && lastBlock.text !== undefined) {
-            lastBlock.text += deltaText;
+    switch (streamEvent.type) {
+      case 'content_block_start': {
+        const blockIndex = streamEvent.index;
+        const block = streamEvent.content_block;
+
+        if (block.type === 'text') {
+          const message: ChatMessage = {
+            id: `stream_${sessionId}_${blockIndex}_${Date.now()}`,
+            sdkMessage,
+            role: 'assistant',
+            content: '',
+            contentBlocks: [{ type: 'text', text: '' }],
+            timestamp: Date.now(),
+            status: 'streaming',
+            streaming: true,
+            sessionId,
+            metadata: {
+              parentToolUseId: sdkMessage.parent_tool_use_id || undefined
+            }
+          };
+
+          const messageIndex = chatState.messages.push(message) - 1;
+          this.setStreamEntry({
+            sessionId,
+            blockIndex,
+            messageIndex,
+            contentType: 'text'
+          });
+        } else if (block.type === 'tool_use') {
+          const messageIndex = this.createToolMessage(block as Record<string, any>, sdkMessage);
+          this.setStreamEntry({
+            sessionId,
+            blockIndex,
+            messageIndex,
+            contentType: 'tool_use',
+            toolUseId: block.id
+          });
+
+          if (typeof block.input === 'string') {
+            this.toolInputBuffers.set(block.id, block.input);
+          } else if (block.input !== undefined) {
+            try {
+              this.toolInputBuffers.set(block.id, JSON.stringify(block.input));
+            } catch {
+              this.toolInputBuffers.set(block.id, String(block.input));
+            }
+          } else {
+            this.toolInputBuffers.set(block.id, '');
           }
         }
+        break;
       }
-    } else {
-      const message: ChatMessage = {
-        id: `stream_${Date.now()}`,
-        sdkMessage,
-        role: 'assistant',
-        content: deltaText,
-        contentBlocks: [{ type: 'text', text: deltaText }],
-        timestamp: Date.now(),
-        status: 'streaming',
-        streaming: true,
-        sessionId: sdkMessage.session_id,
-        metadata: {
-          parentToolUseId: sdkMessage.parent_tool_use_id || undefined
+      case 'content_block_delta': {
+        const entry = this.getStreamEntry(sessionId, streamEvent.index);
+        if (!entry) {
+          return;
         }
-      };
 
-      const index = chatState.messages.push(message) - 1;
-      chatState.streamingMessages.set(sessionId, index);
+        if (entry.contentType === 'text' && streamEvent.delta.type === 'text_delta') {
+          const deltaText = streamEvent.delta.text || '';
+          if (!deltaText) {
+            return;
+          }
+          const message = chatState.messages[entry.messageIndex];
+          if (message) {
+            message.content += deltaText;
+            message.streaming = true;
+            message.status = 'streaming';
+            if (!message.contentBlocks || message.contentBlocks.length === 0) {
+              message.contentBlocks = [{ type: 'text', text: deltaText }];
+            } else {
+              const block = message.contentBlocks[0];
+              if (block.type === 'text') {
+                block.text = (block.text || '') + deltaText;
+              }
+            }
+            message.sdkMessage = sdkMessage;
+          }
+        } else if (entry.contentType === 'tool_use' && entry.toolUseId && streamEvent.delta.type === 'input_json_delta') {
+          const accumulated = (this.toolInputBuffers.get(entry.toolUseId) || '') + streamEvent.delta.partial_json;
+          this.toolInputBuffers.set(entry.toolUseId, accumulated);
+          const parsed = this.tryParseJson(accumulated);
+
+          const toolMessage = chatState.messages[entry.messageIndex];
+          if (toolMessage?.contentBlocks?.[0]) {
+            toolMessage.contentBlocks[0].input = parsed ?? accumulated;
+          }
+
+          const toolName = toolMessage?.contentBlocks?.[0]?.name || getToolMessage(entry.toolUseId)?.toolUse?.name || '';
+          upsertToolMessage(entry.toolUseId, {
+            toolUse: {
+              id: entry.toolUseId,
+              name: toolName,
+              input: parsed ?? accumulated
+            }
+          });
+        }
+        break;
+      }
+      case 'content_block_stop': {
+        const entry = this.getStreamEntry(sessionId, streamEvent.index);
+        if (!entry) {
+          return;
+        }
+
+        const message = chatState.messages[entry.messageIndex];
+        if (message && entry.contentType === 'text') {
+          message.streaming = false;
+          message.status = 'completed';
+        }
+
+        if (entry.contentType === 'tool_use' && entry.toolUseId) {
+          const buffer = this.toolInputBuffers.get(entry.toolUseId);
+          if (buffer !== undefined) {
+            const parsed = this.tryParseJson(buffer);
+            const toolMessage = chatState.messages[entry.messageIndex];
+            const toolName = toolMessage?.contentBlocks?.[0]?.name || getToolMessage(entry.toolUseId)?.toolUse?.name || '';
+            if (toolMessage?.contentBlocks?.[0]) {
+              toolMessage.contentBlocks[0].input = parsed ?? buffer;
+            }
+
+            upsertToolMessage(entry.toolUseId, {
+              toolUse: {
+                id: entry.toolUseId,
+                name: toolName,
+                input: parsed ?? buffer
+              }
+            });
+          }
+
+          this.toolInputBuffers.delete(entry.toolUseId);
+        }
+
+        this.clearStreamEntry(sessionId, entry.blockIndex);
+        break;
+      }
+      case 'message_stop': {
+        for (const [key, entry] of Array.from(chatState.streamingMessages.entries())) {
+          if (entry.sessionId === sessionId && entry.contentType === 'text') {
+            const message = chatState.messages[entry.messageIndex];
+            if (message) {
+              message.streaming = false;
+              message.status = 'completed';
+            }
+            chatState.streamingMessages.delete(key);
+          }
+        }
+        break;
+      }
+      default:
+        break;
     }
   }
 
