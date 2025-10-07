@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { SDKMessage, SDKUserMessage, SDKUserMessageReplay } from '@anthropic-ai/claude-code';
+import { SDKMessage, SDKUserMessage, SDKUserMessageReplay } from '@anthropic-ai/claude-agent-sdk';
 import Anthropic from '@anthropic-ai/sdk';
 // import type { CancellationToken } from 'vscode';
 import { ResourceMap, ResourceSet } from '../common/map';
@@ -35,19 +35,19 @@ type StoredSDKMessage = SDKMessage & {
 	readonly timestamp: Date;
 }
 
-export const IClaudeCodeSessionService = createServiceIdentifier<IClaudeCodeSessionService>('IClaudeCodeSessionService');
+export const IClaudeAgentSessionService = createServiceIdentifier<IClaudeAgentSessionService>('IClaudeAgentSessionService');
 
-export interface IClaudeCodeSessionService {
-	readonly _serviceBrand: undefined;
-	getAllSessions(token: CancellationToken): Promise<readonly IClaudeCodeSession[]>;
-	getSession(sessionId: string, token: CancellationToken): Promise<IClaudeCodeSession | undefined>;
+export interface IClaudeAgentSessionService {
+        readonly _serviceBrand: undefined;
+        getAllSessions(token: CancellationToken): Promise<readonly IClaudeAgentSession[]>;
+        getSession(sessionId: string, token: CancellationToken): Promise<IClaudeAgentSession | undefined>;
 }
 
-export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
-	declare _serviceBrand: undefined;
+export class ClaudeAgentSessionService implements IClaudeAgentSessionService {
+        declare _serviceBrand: undefined;
 
-	// Simple mtime-based cache
-	private _sessionCache = new ResourceMap<readonly IClaudeCodeSession[]>();
+        // Simple mtime-based cache
+        private _sessionCache = new ResourceMap<readonly IClaudeAgentSession[]>();
 	private _fileMtimes = new ResourceMap<number>();
 
 	constructor(
@@ -65,13 +65,13 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 	 * - Build message chains from leaf nodes
 	 * - These are the complete "sessions" that can be resumed
 	 */
-	async getAllSessions(token: CancellationToken): Promise<readonly IClaudeCodeSession[]> {
-		const folders = this._workspace.getWorkspaceFolders();
-		const items: IClaudeCodeSession[] = [];
+        async getAllSessions(token: CancellationToken): Promise<readonly IClaudeAgentSession[]> {
+                const folders = this._workspace.getWorkspaceFolders();
+                const items: IClaudeAgentSession[] = [];
 
 		// 如果没有工作区文件夹，直接返回空数组
 		if (folders.length === 0) {
-			this._logService.debug('[ClaudeCodeSessionService] 没有工作区文件夹，返回空会话列表');
+                        this._logService.debug('[ClaudeAgentSessionService] 没有工作区文件夹，返回空会话列表');
 			return items;
 		}
 
@@ -99,15 +99,15 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 		return items;
 	}
 
-	async getSession(claudeCodeSessionId: string, token: CancellationToken): Promise<IClaudeCodeSession | undefined> {
-		const all = await this.getAllSessions(token);
-		return all.find(session => session.id === claudeCodeSessionId);
-	}
+        async getSession(claudeAgentSessionId: string, token: CancellationToken): Promise<IClaudeAgentSession | undefined> {
+                const all = await this.getAllSessions(token);
+                return all.find(session => session.id === claudeAgentSessionId);
+        }
 
 	/**
 	 * Check if cached sessions are still valid by comparing file modification times
 	 */
-	private async _getCachedSessionsIfValid(projectDirUri: URI, token: CancellationToken): Promise<readonly IClaudeCodeSession[] | null> {
+        private async _getCachedSessionsIfValid(projectDirUri: URI, token: CancellationToken): Promise<readonly IClaudeAgentSession[] | null> {
 		if (!this._sessionCache.has(projectDirUri)) {
 			return null; // No cache entry
 		}
@@ -157,7 +157,7 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 			return this._sessionCache.get(projectDirUri) || null;
 		} catch (e) {
 			// Directory read failed, invalidate cache
-			this._logService.error(e as Error, `[ClaudeCodeSessionLoader] Failed to check cache validity for: ${projectDirUri}`);
+                        this._logService.error(e as Error, `[ClaudeAgentSessionLoader] Failed to check cache validity for: ${projectDirUri}`);
 			return null;
 		}
 	}
@@ -165,7 +165,7 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 	/**
 	 * Load sessions from disk and update file modification time tracking
 	 */
-	private async _loadSessionsFromDisk(projectDirUri: URI, token: CancellationToken): Promise<readonly IClaudeCodeSession[]> {
+        private async _loadSessionsFromDisk(projectDirUri: URI, token: CancellationToken): Promise<readonly IClaudeAgentSession[]> {
 		let entries: [string, FileType][] = [];
 		try {
 			entries = await this._fileSystem.readDirectory(projectDirUri);
@@ -231,7 +231,7 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 			}
 		}
 
-		const sessions: IClaudeCodeSession[] = [];
+            const sessions: IClaudeAgentSession[] = [];
 		for (const leafUuid of leafNodes) {
 			const messages: StoredSDKMessage[] = [];
 			let currentUuid: string | null = leafUuid;
@@ -253,7 +253,7 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 
 			// Create session if we have messages
 			if (messages.length > 0) {
-				const session: IClaudeCodeSession = {
+                            const session: IClaudeAgentSession = {
 					id: allMessages.get(leafUuid)!.sessionId,
 					label: this._generateSessionLabel(summaryEntry, messages),
 					messages: messages,
@@ -264,7 +264,7 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 		}
 
 		// De-duplicate by SDK session id: keep the most recent conversation per sessionId
-		const byId = new Map<string, IClaudeCodeSession>();
+            const byId = new Map<string, IClaudeAgentSession>();
 		for (const s of sessions) {
 			const existing = byId.get(s.id);
 			if (!existing) {
@@ -422,9 +422,9 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 
 }
 
-export interface IClaudeCodeSession {
-	readonly id: string;
-	readonly label: string;
-	readonly messages: readonly SDKMessage[];
-	readonly timestamp: Date;
+export interface IClaudeAgentSession {
+        readonly id: string;
+        readonly label: string;
+        readonly messages: readonly SDKMessage[];
+        readonly timestamp: Date;
 }

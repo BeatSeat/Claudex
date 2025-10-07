@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { IClaudeCodeSessionService } from './session';
+import { IClaudeAgentSessionService } from './session';
 import { ClaudeAgentManager } from './claude';
 import { UiMessageBus } from './uiMessageBus';
 import { UiEvent, ClaudeRequest } from './types';
-import { SDKMessage } from '@anthropic-ai/claude-code';
+import { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ILogService } from '../log/logService';
 import type { CancellationToken } from '../common/types';
 
@@ -26,7 +26,7 @@ export class ClaudeClient {
   private currentSessionId?: string;
 
   constructor(
-    private readonly sessionService: IClaudeCodeSessionService,
+    private readonly sessionService: IClaudeAgentSessionService,
     private readonly claudeAgent: ClaudeAgentManager,
     private readonly logService: ILogService
   ) {}

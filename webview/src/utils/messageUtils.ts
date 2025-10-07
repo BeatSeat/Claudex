@@ -10,7 +10,7 @@ import type {
   SDKSystemMessage,
   SDKCompactBoundaryMessage,
   SDKPartialAssistantMessage
-} from '@anthropic-ai/claude-code';
+} from '@anthropic-ai/claude-agent-sdk';
 
 // 内容块类型定义
 export interface ContentBlock {

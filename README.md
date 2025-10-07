@@ -1,5 +1,5 @@
 # Claudex
 
-Claudex - Claude Code for VSCode.
+Claudex - Claude Agent SDK for VSCode.
 
 Haleclipse

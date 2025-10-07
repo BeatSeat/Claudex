@@ -13,7 +13,7 @@ import type {
   PermissionState
 } from '../../types/messages';
 import type { QueuedMessage, MessageQueueState } from '../../types/queue';
-import type { SDKMessage } from '@anthropic-ai/claude-code';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import {
   extractTextContent,
   extractContentBlocks,

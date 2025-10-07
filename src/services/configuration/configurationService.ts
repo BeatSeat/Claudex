@@ -18,7 +18,7 @@ export interface IConfigurationService {
 // 配置键定义，基于原始 ConfigKey namespace
 export namespace ConfigKey {
 	export namespace Internal {
-		export const ClaudeCodeDebugEnabled = 'chat.advanced.claudeCode.debug';
+                export const ClaudeAgentDebugEnabled = 'chat.advanced.claudeAgent.debug';
 		export const AgentTemperature = 'chat.advanced.agent.temperature';
 	}
 }
@@ -27,7 +27,7 @@ export class ConfigurationService implements IConfigurationService {
 	declare _serviceBrand: undefined;
 
 	private config = new Map<string, any>([
-		[ConfigKey.Internal.ClaudeCodeDebugEnabled, false],
+                [ConfigKey.Internal.ClaudeAgentDebugEnabled, false],
 		[ConfigKey.Internal.AgentTemperature, 0],
 		['chat.agent.maxRequests', 50]
 	]);

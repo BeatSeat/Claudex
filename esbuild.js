@@ -39,7 +39,7 @@ const copyClaudeCliPlugin = {
         const require = createRequire(import.meta.url);
         build.onEnd(async () => {
             try {
-                const pkgDir = path.dirname(require.resolve('@anthropic-ai/claude-code/cli.js'));
+                const pkgDir = path.dirname(require.resolve('@anthropic-ai/claude-agent-sdk/cli.js'));
                 const outDir = path.resolve(process.cwd(), 'dist');
                 await fs.mkdir(outDir, { recursive: true });
 
@@ -47,7 +47,7 @@ const copyClaudeCliPlugin = {
                 const cliSrc = path.join(pkgDir, 'cli.js');
                 const cliDst = path.join(outDir, 'claude-cli.js');
                 await fs.copyFile(cliSrc, cliDst);
-                console.log(`[build] Copied Claude CLI -> ${path.relative(process.cwd(), cliDst)}`);
+                console.log(`[build] Copied Claude Agent CLI -> ${path.relative(process.cwd(), cliDst)}`);
 
                 // copy yoga.wasm (required by CLI at runtime)
                 const wasmSrc = path.join(pkgDir, 'yoga.wasm');

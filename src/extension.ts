@@ -6,7 +6,7 @@ import { ChatViewProvider } from './panels/chatViewProvider';
 import { ClaudeClient } from './services/claude/client';
 import { LogServiceImpl, ConsoleLog, LogLevel } from './services/log/logService';
 import { ClaudeAgentManager } from './services/claude/claude';
-import { ClaudeCodeSessionService, IClaudeCodeSessionService } from './services/claude/session';
+import { ClaudeAgentSessionService, IClaudeAgentSessionService } from './services/claude/session';
 import { InstantiationService, ServiceCollection, IInstantiationService } from './services/common/services';
 import { FileSystemService, IFileSystemService } from './services/filesystem/fileSystemService';
 import { WorkspaceService, IWorkspaceService } from './services/workspace/workspaceService';
@@ -93,7 +93,7 @@ async function initializeServices(context: vscode.ExtensionContext): Promise<voi
   const toolsService = new ToolsService(logService);
 
   // 创建会话服务
-  const sessionService = new ClaudeCodeSessionService(
+  const sessionService = new ClaudeAgentSessionService(
     fileSystemService,
     logService,
     workspaceService,
@@ -109,7 +109,7 @@ async function initializeServices(context: vscode.ExtensionContext): Promise<voi
   serviceCollection.set(INativeEnvService, nativeEnvService);
   serviceCollection.set(IConfigurationService, configService);
   serviceCollection.set(IToolsService, toolsService);
-  serviceCollection.set(IClaudeCodeSessionService, sessionService);
+  serviceCollection.set(IClaudeAgentSessionService, sessionService);
 
   const instantiationService = new InstantiationService(serviceCollection);
 

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { Options, PermissionResult, Query, SDKMessage, SDKUserMessage, CanUseTool } from '@anthropic-ai/claude-code';
+import type { Options, PermissionResult, Query, SDKMessage, SDKUserMessage, CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import Anthropic from '@anthropic-ai/sdk';
 import { DeferredPromise } from '../common/deferred';
 import { Disposable } from '../common/lifecycle';
@@ -18,7 +18,7 @@ import { ClaudeToolNames, isFileOkForTool } from './tools';
 import { ClaudeRequest, ClaudeResult } from './types';
 import { UiMessageBus } from './uiMessageBus';
 
-// Manages Claude Code agent interactions
+// Manages Claude Agent SDK interactions
 export class ClaudeAgentManager extends Disposable {
 
 	constructor(
@@ -35,7 +35,7 @@ export class ClaudeAgentManager extends Disposable {
 		signal: AbortSignal
 	): Promise<ClaudeResult & { claudeSessionId?: string }> {
 		try {
-			const session = this.instantiationService.createInstance(ClaudeCodeSession, claudeSessionId);
+                        const session = this.instantiationService.createInstance(ClaudeAgentSession, claudeSessionId);
 			await session.invoke(
 				request.prompt,
 				bus,
@@ -46,7 +46,7 @@ export class ClaudeAgentManager extends Disposable {
 		} catch (invokeError) {
 			const err = invokeError as Error;
 			this.logService.error(err);
-			bus.emit({ kind: 'error', message: err.message || 'Claude CLI Error', cause: err });
+                        bus.emit({ kind: 'error', message: err.message || 'Claude Agent CLI Error', cause: err });
 			return {};
 		}
 	}
@@ -59,8 +59,8 @@ export class ClaudeAgentManager extends Disposable {
 
 class KnownClaudeError extends Error { }
 
-class ClaudeCodeSession {
-	private static DenyToolMessage = 'The user declined to run the tool';
+class ClaudeAgentSession {
+        private static DenyToolMessage = 'The user declined to run the tool';
 	private currentQuery: Query | null = null;
 	private unprocessedToolCalls = new Map<string, Anthropic.ToolUseBlock>();
 
@@ -86,8 +86,8 @@ class ClaudeCodeSession {
 
 		let controlSub: any;
 		try {
-			// Build options for the Claude Code SDK
-			const isDebugEnabled = this.configService.getConfig(ConfigKey.Internal.ClaudeCodeDebugEnabled);
+                        // Build options for the Claude Agent SDK
+                        const isDebugEnabled = this.configService.getConfig(ConfigKey.Internal.ClaudeAgentDebugEnabled);
 			const options: Options = {
 				cwd: this.workspaceService.getWorkspaceFolders().at(0)?.fsPath,
 				abortController,
@@ -108,8 +108,8 @@ class ClaudeCodeSession {
 				...optionsOverride,
 			};
 
-			this.logService.trace(`Claude CLI SDK: Starting query with options: ${JSON.stringify({ ...options, env: undefined })}`);
-			const { query } = await import('@anthropic-ai/claude-code');
+                        this.logService.trace(`Claude Agent SDK: Starting query with options: ${JSON.stringify({ ...options, env: undefined })}`);
+                        const { query } = await import('@anthropic-ai/claude-agent-sdk');
 			const def = new DeferredPromise<void>();
 
 			async function* createPromptIterable(promptText: string, sessionId?: string): AsyncIterable<SDKUserMessage> {
@@ -134,7 +134,7 @@ class ClaudeCodeSession {
 
 			this.currentQuery = query({ prompt: promptInput, options });
 			for await (const message of this.currentQuery) {
-				this.logService.trace(`Claude CLI SDK Message: ${JSON.stringify(message, null, 2)}`);
+                                this.logService.trace(`Claude Agent SDK Message: ${JSON.stringify(message, null, 2)}`);
 				if (message.session_id) {
 					this.sessionId = message.session_id;
 				}
@@ -185,9 +185,9 @@ class ClaudeCodeSession {
 		bus: UiMessageBus,
 		opts: { signal: AbortSignal; suggestions?: any }
 	): Promise<PermissionResult> {
-		this.logService.trace(`ClaudeCodeSession: canUseTool: ${toolName}(${JSON.stringify(input)})`);
-		if (await this.canAutoApprove(toolName, input)) {
-			this.logService.trace(`ClaudeCodeSession: auto-approving ${toolName}`);
+                        this.logService.trace(`ClaudeAgentSession: canUseTool: ${toolName}(${JSON.stringify(input)})`);
+                if (await this.canAutoApprove(toolName, input)) {
+                        this.logService.trace(`ClaudeAgentSession: auto-approving ${toolName}`);
 			return {
 				behavior: 'allow',
 				updatedInput: input,
@@ -216,7 +216,7 @@ class ClaudeCodeSession {
 			return decision.result;
 		} catch (error) {
 			this.logService.trace(`Tool confirmation error: ${error}`);
-			return { behavior: 'deny', message: ClaudeCodeSession.DenyToolMessage, interrupt: true };
+                    return { behavior: 'deny', message: ClaudeAgentSession.DenyToolMessage, interrupt: true };
 		}
 	}
 
@@ -238,7 +238,7 @@ class ClaudeCodeSession {
 			for (const item of message.message.content) {
 				if (item.type === 'tool_use' && item.id) {
 					this.unprocessedToolCalls.set(item.id, item as Anthropic.ToolUseBlock);
-					this.logService.trace(`[ClaudeCodeSession] 存储工具调用: ${item.name} (${item.id})`);
+                                    this.logService.trace(`[ClaudeAgentSession] 存储工具调用: ${item.name} (${item.id})`);
 				}
 			}
 		}
@@ -255,7 +255,7 @@ class ClaudeCodeSession {
 					// 清理已完成的工具调用
 					if (this.unprocessedToolCalls.has(item.tool_use_id)) {
 						this.unprocessedToolCalls.delete(item.tool_use_id);
-						this.logService.trace(`[ClaudeCodeSession] 清理已完成工具调用: ${item.tool_use_id}`);
+                                            this.logService.trace(`[ClaudeAgentSession] 清理已完成工具调用: ${item.tool_use_id}`);
 					}
 				}
 			}
